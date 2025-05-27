@@ -1,13 +1,23 @@
 # Configurações dos produtos para monitorar
 PRODUTOS = [
     {
-        "nome": "Perfume La Vie Est Belle",
+        "nome": "Perfume Lancôme La Vie Est Belle Eau de Parfum 100ml",
         "urls": {
             "sephora": "https://www.sephora.com.br/perfume-la-vie-est-belle-eau-de-parfum-100ml/p/1234567",
             "boticario": "https://www.boticario.com.br/perfume-la-vie-est-belle-eau-de-parfum-100ml/p/1234567",
-            "amazon": "https://www.amazon.com.br/Perfume-La-Vie-Est-Belle/dp/B00X47GQOY"
+            "amazon": "https://www.amazon.com.br/Perfume-Lanc%C3%B4me-Belle-Parfum-Feminino/dp/B00I7PK3GQ",
+            "paraguai": "https://www.comprasparaguai.com.br/perfume-lancome-la-vie-est-belle-eau-de-parfum-feminino-100ml_7965/"
         },
         "preco_alvo": 299.90
+    },
+    {
+        "nome": "iPad 11ª Geração 256GB",
+        "urls": {
+            "apple": "https://www.apple.com/br/ipad/cellular/",
+            "amazon": "https://www.amazon.com.br/ipad",
+            "paraguai": "https://www.comprasparaguai.com.br/busca/?q=ipad"
+        },
+        "preco_alvo": 4000.00
     }
 ]
 

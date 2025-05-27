@@ -13,6 +13,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from openai import OpenAI
 from config import *
+import openpyxl
 
 # Carrega variáveis de ambiente
 load_dotenv()
@@ -22,7 +23,8 @@ class MonitorPrecos:
         self.driver = self._configurar_driver()
         self.resultados = []
         try:
-            self.client = OpenAI(api_key=OPENAI_API_KEY)
+            self.client = OpenAI()
+            self.client.api_key = OPENAI_API_KEY
         except Exception as e:
             print(f"Erro ao inicializar cliente OpenAI: {e}")
             self.client = None
@@ -126,6 +128,65 @@ class MonitorPrecos:
             print(f"Erro ao obter preço da Amazon: {e}")
             return None
 
+    def _obter_preco_paraguai(self, url):
+        """Obtém preço do produto no site de compras no Paraguai"""
+        try:
+            self.driver.get(url)
+            time.sleep(TEMPO_ESPERA)
+            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+            
+            # Tenta diferentes seletores comuns para preços
+            preco_element = (
+                soup.find('span', {'class': 'price'}) or
+                soup.find('span', {'class': 'product-price'}) or
+                soup.find('div', {'class': 'price'}) or
+                soup.find('span', {'data-testid': 'price-value'}) or
+                soup.find('span', {'class': 'price-value'})
+            )
+            
+            if preco_element and preco_element.text:
+                preco_texto = preco_element.text.strip()
+                # Remove caracteres não numéricos exceto ponto e vírgula
+                preco_texto = ''.join(c for c in preco_texto if c.isdigit() or c in '.,')
+                return float(preco_texto.replace('.', '').replace(',', '.'))
+            else:
+                print(f"Elemento de preço não encontrado no site de compras no Paraguai para URL: {url}")
+                return None
+                
+        except Exception as e:
+            print(f"Erro ao obter preço do site de compras no Paraguai: {e}")
+            return None
+
+    def _obter_preco_apple(self, url):
+        """Obtém preço do produto na Apple Store"""
+        try:
+            self.driver.get(url)
+            time.sleep(TEMPO_ESPERA)
+            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+            
+            # Tenta diferentes seletores comuns para preços na Apple Store
+            preco_element = (
+                soup.find('span', {'class': 'price'}) or
+                soup.find('span', {'class': 'product-price'}) or
+                soup.find('div', {'class': 'price'}) or
+                soup.find('span', {'data-testid': 'price-value'}) or
+                soup.find('span', {'class': 'price-value'}) or
+                soup.find('span', {'class': 'current-price'})
+            )
+            
+            if preco_element and preco_element.text:
+                preco_texto = preco_element.text.strip()
+                # Remove caracteres não numéricos exceto ponto e vírgula
+                preco_texto = ''.join(c for c in preco_texto if c.isdigit() or c in '.,')
+                return float(preco_texto.replace('.', '').replace(',', '.'))
+            else:
+                print(f"Elemento de preço não encontrado na Apple Store para URL: {url}")
+                return None
+                
+        except Exception as e:
+            print(f"Erro ao obter preço da Apple Store: {e}")
+            return None
+
     def monitorar_precos(self):
         """Monitora preços de todos os produtos configurados"""
         for produto in PRODUTOS:
@@ -143,6 +204,10 @@ class MonitorPrecos:
                     preco = self._obter_preco_boticario(url)
                 elif loja == 'amazon':
                     preco = self._obter_preco_amazon(url)
+                elif loja == 'paraguai':
+                    preco = self._obter_preco_paraguai(url)
+                elif loja == 'apple':
+                    preco = self._obter_preco_apple(url)
                 
                 resultado[f'preco_{loja}'] = preco
 
@@ -154,8 +219,67 @@ class MonitorPrecos:
             os.makedirs(PASTA_DADOS)
         
         df = pd.DataFrame(self.resultados)
+        
+        # Formata as colunas de preço
+        colunas_preco = [col for col in df.columns if col.startswith('preco_')]
+        for col in colunas_preco:
+            df[col] = df[col].apply(lambda x: f'R$ {x:.2f}' if pd.notnull(x) else 'Não disponível')
+        
+        # Formata a coluna de preço alvo
+        df['preco_alvo'] = df['preco_alvo'].apply(lambda x: f'R$ {x:.2f}')
+        
+        # Renomeia as colunas para melhor legibilidade
+        df = df.rename(columns={
+            'produto': 'Produto',
+            'data': 'Data/Hora',
+            'preco_alvo': 'Preço Alvo',
+            'preco_sephora': 'Preço Sephora',
+            'preco_boticario': 'Preço Boticário',
+            'preco_amazon': 'Preço Amazon',
+            'preco_paraguai': 'Preço Paraguai',
+            'preco_apple': 'Preço Apple'
+        })
+        
+        # Reordena as colunas
+        colunas_ordenadas = ['Produto', 'Data/Hora', 'Preço Alvo', 'Preço Apple', 'Preço Sephora', 'Preço Boticário', 'Preço Amazon', 'Preço Paraguai']
+        df = df[colunas_ordenadas]
+        
+        # Salva o arquivo Excel
         caminho_arquivo = os.path.join(PASTA_DADOS, NOME_ARQUIVO_EXCEL)
-        df.to_excel(caminho_arquivo, index=False)
+        
+        # Cria um writer do Excel
+        with pd.ExcelWriter(caminho_arquivo, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Preços')
+            
+            # Obtém a planilha
+            worksheet = writer.sheets['Preços']
+            
+            # Ajusta a largura das colunas
+            for idx, col in enumerate(df.columns):
+                max_length = max(
+                    df[col].astype(str).apply(len).max(),
+                    len(col)
+                )
+                worksheet.column_dimensions[chr(65 + idx)].width = max_length + 2
+            
+            # Formata o cabeçalho
+            for cell in worksheet[1]:
+                cell.font = cell.font.copy(bold=True)
+                cell.fill = openpyxl.styles.PatternFill(start_color='CCCCCC', end_color='CCCCCC', fill_type='solid')
+                cell.alignment = openpyxl.styles.Alignment(horizontal='center')
+            
+            # Formata as células de preço
+            for row in worksheet.iter_rows(min_row=2):
+                for cell in row:
+                    cell.alignment = openpyxl.styles.Alignment(horizontal='center')
+                    
+                    # Destaca preços abaixo do alvo em verde
+                    if cell.column > 3 and cell.value != 'Não disponível':  # Colunas de preço
+                        preco = float(cell.value.replace('R$ ', '').replace('.', '').replace(',', '.'))
+                        preco_alvo = float(worksheet.cell(row=cell.row, column=3).value.replace('R$ ', '').replace('.', '').replace(',', '.'))
+                        if preco < preco_alvo:
+                            cell.fill = openpyxl.styles.PatternFill(start_color='90EE90', end_color='90EE90', fill_type='solid')
+        
         print(f"Planilha gerada: {caminho_arquivo}")
 
     def enviar_alerta_email(self):
